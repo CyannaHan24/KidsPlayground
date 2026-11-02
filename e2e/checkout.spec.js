@@ -29,7 +29,8 @@ test('continuous scanning deduplicates, rearms, pauses during payment and releas
  await page.evaluate(()=>window.showCode(null));await page.waitForTimeout(1300);await page.evaluate(()=>window.showCode('P003'));await expect(page.locator('.badge')).toHaveText('2');
  await page.evaluate(()=>window.showCode('P001'));await expect(page.locator('.badge')).toHaveText('3');await expect(page.locator('.basket-row').first()).toHaveAttribute('data-item','P001');
  expect(await page.evaluate(()=>window.cameraCalls)).toBe(1);
- await page.locator('#checkout').click();await page.evaluate(()=>window.showCode('P002'));await page.waitForTimeout(1400);await expect(page.locator('.badge')).toHaveText('3');await page.locator('[data-close]').click();await expect(page.locator('.badge')).toHaveText('4');
+ await page.evaluate(()=>window.showCode('P003'));await expect(page.locator('.badge')).toHaveText('4');await expect(page.locator('.basket-row').first()).toHaveAttribute('data-item','P003');await expect(page.locator('[data-item="P003"] .stepper span')).toHaveText('3');expect(await page.locator('#basket-items').evaluate(el=>el.scrollTop)).toBe(0);
+ await page.locator('#checkout').click();await page.evaluate(()=>window.showCode('P002'));await page.waitForTimeout(1400);await expect(page.locator('.badge')).toHaveText('4');await page.locator('[data-close]').click();await expect(page.locator('.badge')).toHaveText('5');
  await page.locator('#home').click();expect(await page.evaluate(()=>window.testTracks.every(t=>t.readyState==='ended'))).toBe(true);
 });
 for(const size of [{width:360,height:560},{width:360,height:640},{width:412,height:732},{width:640,height:360}]){

@@ -21,16 +21,16 @@ const name=p=>lang==='zh'?p.zh:p.en;
 const unit=p=>lang==='zh'?p.unitZh:p.unitEn;
 function toast(msg){$('#toast').textContent=msg;$('#toast').classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),2800)}
 function persist(){save('market-basket',basket)}
-function add(id,delta=1){
+function add(id,delta=1,fromScan=false){
  const p=products.find(p=>p.id===id);
  if(!p){toast(t('找不到商品，请在商品管理中添加此编号','Unknown product. Add this ID in Products.'));return}
  if(delta>0&&basket[id]>=99){setScanStatus(t('这个商品已经有 99 件啦','This product already has 99 items'));return false}
  const isNew=!basket[id];
  basket[id]=Math.max(0,Math.min(99,(basket[id]||0)+delta));
  if(!basket[id]){delete basket[id];basketOrder=basketOrder.filter(x=>x!==id)}
- else if(isNew)basketOrder=[id,...basketOrder.filter(x=>x!==id)];
+ else if(isNew||fromScan)basketOrder=[id,...basketOrder.filter(x=>x!==id)];
  persist();updateBasket();
- if(isNew)$('#basket-items').scrollTop=0;
+ if(isNew||fromScan)$('#basket-items').scrollTop=0;
  if(delta>0){setScanStatus(t(`已加入 ${p.zh} · 移开后可再扫一次`,`${p.en} added · Move it away to scan again`));navigator.vibrate?.(60)}
  return true;
 }
@@ -101,7 +101,7 @@ async function startScanner(){
      const id=code.data;const repeated=id===lastCode;
      lastCode=id;lastSeen=time;
      if(!repeated&&time-lastAdded>=1100){
-      if(products.some(p=>p.id===id)){lastAdded=time;if(add(id))showScanFeedback(products.find(p=>p.id===id))}
+      if(products.some(p=>p.id===id)){lastAdded=time;if(add(id,1,true))showScanFeedback(products.find(p=>p.id===id))}
       else setScanStatus(t('未知商品编号：','Unknown product ID: ')+id.slice(0,30));
      }else if(!repeated){lastCode=null}
     }else if(time-lastSeen>=1000){lastCode=null;setScanStatus(t('准备好啦，扫描下一个商品','Ready for the next product'))}
