@@ -38,3 +38,5 @@ No paid services or runtime secrets are required. A deployment needs repository 
 The app uses the actual viewport height (including a JavaScript fallback for browsers without dynamic viewport units), internal basket scrolling, safe-area padding, and compact/landscape layouts. Automated Chromium checks cover 360×560 (extra allowance for browser controls), 360×640, 412×732, and 640×360 CSS pixels. These are emulated viewports, not a claim of physical Galaxy C9 Pro validation. Physical display resolution and CSS viewport size differ with Android display scaling. Confirm real camera framing and browser toolbar behavior on the phone.
 
 Browser checks: start the production preview, then `npx playwright test`. The configuration defaults to `/usr/bin/chromium`; set `CHROMIUM_PATH` to use another installed Chromium executable.
+
+Payment dialogs reuse an already-open modal instead of calling `showModal()` again; the browser suite tests older-browser behavior that rejects duplicate modal opening, including Close and Finish for cash, QR, and card.

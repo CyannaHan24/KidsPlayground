@@ -43,3 +43,12 @@ for(const size of [{width:360,height:560},{width:360,height:640},{width:412,heig
  });
 }
 test('denied camera keeps the fixed checkout usable through manual IDs',async({page})=>{await page.addInitScript(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Denied','NotAllowedError')}});await page.goto('/');await start(page);await expect(page.locator('#retry-camera')).toBeVisible();await manual(page,'P001');await expect(page.locator('.total strong')).toHaveText('¥10.00');await expect(page.locator('#checkout')).toBeInViewport()});
+test('payment buttons work when older browsers reject reopening an open dialog',async({page})=>{
+ test.setTimeout(12000);
+ await page.addInitScript(()=>{const original=HTMLDialogElement.prototype.showModal;HTMLDialogElement.prototype.showModal=function(){if(this.open)throw new DOMException('Dialog already open','InvalidStateError');return original.call(this)}});
+ await fakeCamera(page);await page.goto('/');await start(page);await manual(page,'P001');
+ for(const method of ['cash','card','qr']){
+  await page.locator('#checkout').click();await page.locator(`[data-pay="${method}"]`).click();await page.locator('[data-close]').click();await expect(page.locator('#modal')).not.toBeVisible();
+  await page.locator('#checkout').click();await page.locator(`[data-pay="${method}"]`).click();await page.locator('#finish').click();await expect(page.locator('.receipt')).toBeVisible();await page.locator('[data-close]').click();await manual(page,'P001');
+ }
+});
