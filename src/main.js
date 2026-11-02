@@ -73,7 +73,7 @@ function clearScanFeedback(){
 function showScanFeedback(product){
  clearScanFeedback();feedbackUntil=performance.now()+1000;
  const popup=$('#scan-feedback');
- popup.innerHTML=`<div class="scan-confirmation"><div class="scan-confirmed">✓ ${t('扫码成功','Item scanned')}</div><span class="confirmation-art ${esc(product.color||'blue')}">${esc(product.emoji)}</span><h2>${esc(name(product))}</h2><p>${money(product.price)} / ${esc(unit(product))}</p><strong>${t('购物篮数量','In your basket')} × ${basket[product.id]}</strong></div>`;
+ popup.innerHTML=`<div class="scan-confirmation"><div class="scan-confirmed">✓ ${t('扫码成功','Item scanned')}</div><span class="confirmation-art ${esc(product.color||'blue')}">${esc(product.emoji)}</span><h2>${esc(name(product))}</h2><p>${money(product.price)} / ${esc(unit(product))} · ${esc(product.id)}</p><strong>${t('购物篮数量','In your basket')} × ${basket[product.id]}</strong></div>`;
  popup.hidden=false;playScanDing();
  feedbackTimer=setTimeout(clearScanFeedback,1000);
 }
@@ -90,21 +90,39 @@ async function startScanner(){
   const media=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:640},height:{ideal:480}},audio:false});
   if(session!==scanSession||page!=='shop'||document.hidden){media.getTracks().forEach(track=>track.stop());return}
   stream=media;const video=$('#video');video.srcObject=media;await video.play();if(session!==scanSession)return;
-  setScanStatus(t('对准二维码 · 扫完移开再扫','Show a QR code · Move it away between scans'));
-  const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d',{willReadFrequently:true});let lastFrame=0;
+  setScanStatus(t('一个二维码放框内 · 扫完移开再扫','One QR inside the frame · Move it away after scanning'));
+  const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d',{willReadFrequently:true});let lastFrame=0,lastVideoTime=-1,candidate=null,candidateCount=0;
   const tick=time=>{
    if(session!==scanSession)return;
-   if(!$('#modal').open&&time>=feedbackUntil&&time-lastFrame>=200&&video.readyState>=2){
-    lastFrame=time;canvas.width=Math.min(video.videoWidth,480);canvas.height=Math.round(video.videoHeight*canvas.width/video.videoWidth);
-    ctx.drawImage(video,0,0,canvas.width,canvas.height);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);const code=jsQR(pixels.data,canvas.width,canvas.height);
+   const paused=$('#modal').open||time<feedbackUntil;
+   if(paused){candidate=null;candidateCount=0}
+   if(!paused&&time-lastFrame>=200&&video.readyState>=2&&video.currentTime!==lastVideoTime){
+    lastFrame=time;lastVideoTime=video.currentTime;
+    // Decode only the centered square indicated by the guide. The preview shows
+    // the full camera image, so cropped-out labels cannot silently win a scan.
+    const side=Math.floor(Math.min(video.videoWidth,video.videoHeight)*0.85);
+    const sx=(video.videoWidth-side)/2,sy=(video.videoHeight-side)/2;
+    const scale=Math.min(video.clientWidth/video.videoWidth,video.clientHeight/video.videoHeight);
+    const guide=$('.scan-guide');guide.style.width=side*scale+'px';guide.style.height=side*scale+'px';
+    canvas.width=Math.min(side,480);canvas.height=canvas.width;
+    ctx.drawImage(video,sx,sy,side,side,0,0,canvas.width,canvas.height);
+    const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);const code=jsQR(pixels.data,canvas.width,canvas.height);
     if(code){
-     const id=code.data;const repeated=id===lastCode;
-     lastCode=id;lastSeen=time;
-     if(!repeated&&time-lastAdded>=1100){
-      if(products.some(p=>p.id===id)){lastAdded=time;if(add(id,1,true))showScanFeedback(products.find(p=>p.id===id))}
-      else setScanStatus(t('未知商品编号：','Unknown product ID: ')+id.slice(0,30));
-     }else if(!repeated){lastCode=null}
-    }else if(time-lastSeen>=1000){lastCode=null;setScanStatus(t('准备好啦，扫描下一个商品','Ready for the next product'))}
+     const id=code.data;lastSeen=time;
+     if(id===lastCode){candidate=null;candidateCount=0}
+     else{
+      candidateCount=candidate===id?candidateCount+1:1;candidate=id;
+      if(candidateCount>=2&&time-lastAdded>=1100){
+       lastCode=id;candidate=null;candidateCount=0;
+       const product=products.find(p=>p.id===id);
+       if(product){lastAdded=time;if(add(id,1,true))showScanFeedback(product)}
+       else setScanStatus(t('未知商品编号：','Unknown product ID: ')+id.slice(0,30));
+      }
+     }
+    }else{
+     candidate=null;candidateCount=0;
+     if(time-lastSeen>=1000){lastCode=null;setScanStatus(t('把一个二维码放进框内','Place one QR code inside the frame'))}
+    }
    }
    scanFrame=requestAnimationFrame(tick);
   };scanFrame=requestAnimationFrame(tick);

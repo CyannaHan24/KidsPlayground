@@ -74,3 +74,17 @@ test('successful scans ding once and show product feedback for one second before
 test('scanning and visual confirmation still work when audio is unavailable',async({page})=>{
  await page.addInitScript(()=>{window.AudioContext=undefined;window.webkitAudioContext=undefined});await fakeCamera(page);await page.goto('/');await start(page);await page.waitForFunction(()=>!!window.showCode);await page.evaluate(()=>window.showCode('P003'));await expect(page.locator('#scan-feedback')).toContainText('可乐');await expect(page.locator('.badge')).toHaveText('1');await expect(page.locator('#scan-feedback')).toBeHidden();
 });
+test('ignores off-target labels and confirms the centered QR product',async({page})=>{
+ const images={};for(const id of ['P001','P002'])images[id]=await QRCode.toDataURL(id,{width:400,margin:4});
+ await page.addInitScript(images=>{navigator.mediaDevices.getUserMedia=async()=>{
+  const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;const ctx=canvas.getContext('2d');canvas.style='position:fixed;left:-9999px;width:1px;height:1px';document.body.append(canvas);
+  window.showTarget=async centered=>{ctx.fillStyle='white';ctx.fillRect(0,0,640,480);const milk=new Image();milk.src=images.P001;await milk.decode();ctx.drawImage(milk,10,10,96,96);if(centered){const water=new Image();water.src=images.P002;await water.decode();ctx.drawImage(water,210,130,220,220)}};
+  await window.showTarget(false);const stream=canvas.captureStream(0);const track=stream.getVideoTracks()[0];setInterval(()=>{ctx.drawImage(canvas,0,0);track.requestFrame()},100);return stream;
+ }},images);
+ await page.goto('/');await start(page);await page.waitForFunction(()=>!!window.showTarget);await page.waitForTimeout(1600);await expect(page.locator('.badge')).toHaveText('0');
+ await page.evaluate(()=>window.showTarget(true));await expect(page.locator('.badge')).toHaveText('1');await expect(page.locator('.basket-row')).toHaveAttribute('data-item','P002');await expect(page.locator('#scan-feedback')).toContainText('水');await expect(page.locator('#scan-feedback')).toContainText('P002');
+});
+test('a stalled video frame cannot confirm a product',async({page})=>{
+ await fakeCamera(page);await page.addInitScript(()=>{const descriptor=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'currentTime');Object.defineProperty(HTMLMediaElement.prototype,'currentTime',{configurable:true,get(){return window.releaseFrames?descriptor.get.call(this):0}})});
+ await page.goto('/');await start(page);await page.waitForFunction(()=>!!window.showCode);await page.evaluate(()=>window.showCode('P001'));await page.waitForTimeout(1400);await expect(page.locator('.badge')).toHaveText('0');await page.evaluate(()=>{window.releaseFrames=true});await expect(page.locator('.badge')).toHaveText('1');await expect(page.locator('#scan-feedback')).toContainText('P001');
+});
