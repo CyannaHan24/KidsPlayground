@@ -52,3 +52,24 @@ test('payment buttons work when older browsers reject reopening an open dialog',
   await page.locator('#checkout').click();await page.locator(`[data-pay="${method}"]`).click();await page.locator('#finish').click();await expect(page.locator('.receipt')).toBeVisible();await page.locator('[data-close]').click();await manual(page,'P001');
  }
 });
+test('successful scans ding once and show product feedback for one second before resuming',async({page})=>{
+ await page.addInitScript(()=>{
+  window.scanSounds=[];const start=OscillatorNode.prototype.start;
+  OscillatorNode.prototype.start=function(...args){window.scanSounds.push({state:this.context.state});return start.apply(this,args)};
+ });
+ await fakeCamera(page);await page.goto('/');await start(page);await page.waitForFunction(()=>!!window.showCode);
+ await page.evaluate(()=>{window.feedbackTimes=[];new MutationObserver(()=>{window.feedbackTimes.push({hidden:document.querySelector('#scan-feedback').hidden,time:performance.now()})}).observe(document.querySelector('#scan-feedback'),{attributes:true,attributeFilter:['hidden']})});
+ await page.evaluate(()=>window.showCode('P001'));
+ await expect(page.locator('#scan-feedback')).toBeVisible();await expect(page.locator('#scan-feedback')).toContainText('牛奶');await expect(page.locator('#scan-feedback')).toContainText('¥10.00');await expect(page.locator('#scan-feedback')).toContainText('× 1');
+ const sounds=await page.evaluate(()=>window.scanSounds);expect(sounds).toHaveLength(1);expect(sounds[0].state).toBe('running');
+ await page.waitForTimeout(300);await expect(page.locator('#scan-feedback')).toBeVisible();
+ // A new code appearing during the confirmation must not interrupt it or add early.
+ await page.evaluate(()=>window.showCode('P002'));await page.waitForTimeout(250);await expect(page.locator('.badge')).toHaveText('1');await expect(page.locator('#scan-feedback')).toContainText('牛奶');
+ await expect(page.locator('.badge')).toHaveText('2');await expect(page.locator('#scan-feedback')).toContainText('水');
+ const times=await page.evaluate(()=>window.feedbackTimes);const shown=times.find(t=>!t.hidden);const hidden=times.find(t=>t.hidden&&t.time>shown.time);expect(hidden.time-shown.time).toBeGreaterThanOrEqual(950);expect(hidden.time-shown.time).toBeLessThan(1600);
+ await expect(page.locator('#scan-feedback')).toBeHidden();await page.waitForTimeout(1300);await expect(page.locator('.badge')).toHaveText('2');expect(await page.evaluate(()=>window.scanSounds.length)).toBe(2);
+ await page.locator('#home').click();await expect(page.locator('#scan-feedback')).toBeHidden();
+});
+test('scanning and visual confirmation still work when audio is unavailable',async({page})=>{
+ await page.addInitScript(()=>{window.AudioContext=undefined;window.webkitAudioContext=undefined});await fakeCamera(page);await page.goto('/');await start(page);await page.waitForFunction(()=>!!window.showCode);await page.evaluate(()=>window.showCode('P003'));await expect(page.locator('#scan-feedback')).toContainText('可乐');await expect(page.locator('.badge')).toHaveText('1');await expect(page.locator('#scan-feedback')).toBeHidden();
+});

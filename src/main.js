@@ -1,5 +1,6 @@
 import './style.css';
 import jsQR from 'jsqr';
+import {prepareScanSound,playScanDing} from './scan-sound.js';
 import QRCode from 'qrcode';
 import {initialProducts,total,validateProducts} from './model.js';
 const $=s=>document.querySelector(s);
@@ -13,6 +14,7 @@ basket=Object.fromEntries(Object.entries(basket).filter(([id,q])=>products.some(
 let lang=read('market-lang','zh')==='en'?'en':'zh',page='home',stream,scanFrame,payment=null,receipt=null;
 let scanSession=0,lastCode=null,lastSeen=0,lastAdded=0;
 let basketOrder=Object.keys(basket).reverse();
+let feedbackUntil=0,feedbackTimer;
 const t=(zh,en)=>lang==='zh'?zh:en;
 const money=n=>'¥'+(n/100).toFixed(2);
 const name=p=>lang==='zh'?p.zh:p.en;
@@ -22,6 +24,7 @@ function persist(){save('market-basket',basket)}
 function add(id,delta=1){
  const p=products.find(p=>p.id===id);
  if(!p){toast(t('找不到商品，请在商品管理中添加此编号','Unknown product. Add this ID in Products.'));return}
+ if(delta>0&&basket[id]>=99){setScanStatus(t('这个商品已经有 99 件啦','This product already has 99 items'));return false}
  const isNew=!basket[id];
  basket[id]=Math.max(0,Math.min(99,(basket[id]||0)+delta));
  if(!basket[id]){delete basket[id];basketOrder=basketOrder.filter(x=>x!==id)}
@@ -29,6 +32,7 @@ function add(id,delta=1){
  persist();updateBasket();
  if(isNew)$('#basket-items').scrollTop=0;
  if(delta>0){setScanStatus(t(`已加入 ${p.zh} · 移开后可再扫一次`,`${p.en} added · Move it away to scan again`));navigator.vibrate?.(60)}
+ return true;
 }
 function countItems(){return Object.values(basket).reduce((a,b)=>a+b,0)}
 function basketRows(){return basketOrder.filter(id=>basket[id]).map(id=>products.find(p=>p.id===id)).filter(Boolean).map(p=>`<article class="basket-row" data-item="${esc(p.id)}"><span class="mini-art ${esc(p.color||'blue')}">${esc(p.emoji)}</span><div class="item-info"><strong>${esc(name(p))}</strong><small>${money(p.price)} / ${esc(unit(p))}</small></div><div class="item-end"><b>${money(p.price*basket[p.id])}</b><div class="stepper"><button data-minus="${esc(p.id)}" aria-label="${esc(t('减少','Reduce')+' '+name(p))}">−</button><span>${basket[p.id]}</span><button data-add="${esc(p.id)}" aria-label="${esc(t('增加','Add')+' '+name(p))}">+</button></div></div></article>`).join('')||`<div class="empty"><span>🛍️</span><h3>${t('购物篮在等你哦','Your basket is waiting')}</h3><p>${t('把玩具上的二维码对准镜头','Show a toy’s QR code to the camera')}</p></div>`}
@@ -39,10 +43,10 @@ function updateBasket(){
  $('.total strong').textContent=money(total(products,basket));$('#checkout').disabled=!countItems();$('#clear').disabled=!countItems();
  list.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>add(b.dataset.add));list.querySelectorAll('[data-minus]').forEach(b=>b.onclick=()=>add(b.dataset.minus,-1));
 }
-function navigate(next){page=next;render()}
+function navigate(next){if(next==='shop')prepareScanSound();page=next;render()}
 function render(){
  stopScanner();document.documentElement.lang=lang==='zh'?'zh-CN':'en';document.body.className='page-'+page;
- $('#app').innerHTML=`<div class="app-shell"><header><button id="home" class="home-button" aria-label="${t('返回首页','Home')}" ${page==='home'?'hidden':''}>‹</button><a class="brand" href="#"><img src="./icon.svg" alt=""><span>${t('小小超市','Little Market')}<small>LITTLE MARKET · PLAY & LEARN</small></span></a><button id="language" class="language">${lang==='zh'?'中 / EN':'中文 / EN'}</button></header><main>${page==='home'?homeView():page==='shop'?shopView():`<div class="management-scroll">${page==='products'?catalogView():labelsView()}</div>`}</main></div><div id="toast" role="status"></div><dialog id="modal"></dialog>`;
+ $('#app').innerHTML=`<div class="app-shell"><header><button id="home" class="home-button" aria-label="${t('返回首页','Home')}" ${page==='home'?'hidden':''}>‹</button><a class="brand" href="#"><img src="./icon.svg" alt=""><span>${t('小小超市','Little Market')}<small>LITTLE MARKET · PLAY & LEARN</small></span></a><button id="language" class="language">${lang==='zh'?'中 / EN':'中文 / EN'}</button></header><main>${page==='home'?homeView():page==='shop'?shopView():`<div class="management-scroll">${page==='products'?catalogView():labelsView()}</div>`}</main></div><div id="toast" role="status"></div><dialog id="modal"></dialog><div id="scan-feedback" class="scan-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></div>`;
  $('#language').onclick=()=>{lang=lang==='zh'?'en':'zh';save('market-lang',lang);render()};$('.brand').onclick=e=>{e.preventDefault();navigate('home')};$('#home').onclick=()=>navigate('home');
  document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>navigate(b.dataset.page));
  if(page==='shop'){
@@ -62,8 +66,19 @@ function editProduct(id){const p=products.find(p=>p.id===id)||{id:'P'+String(Mat
 function showPayment(){modal(`<button class="close" data-close aria-label="Close">×</button><div class="payment-heading"><span>🛍️</span><h2>${t('今天买得真开心！','What a lovely shop!')}</h2><p>${t('选择一种游戏付款方式','Choose a pretend payment method')}</p><strong>${money(total(products,basket))}</strong></div><div class="payment-options">${[['cash','💵','现金','Cash'],['qr','▣','扫码支付','QR payment'],['card','💳','银行卡','Card']].map(([id,icon,zh,en])=>`<button data-pay="${id}"><span>${icon}</span>${t(zh,en)}<b>→</b></button>`).join('')}</div><p class="pretend">${t('游戏付款 · 不使用真实账户','Play money only · No real accounts')}</p>`);document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{payment=b.dataset.pay;paymentDetail()})}
 function paymentDetail(){const amount=total(products,basket);modal(`<button class="close" data-close aria-label="Close">×</button><div class="payment-heading"><span>${payment==='cash'?'💵':payment==='card'?'💳':'▣'}</span><h2>${payment==='cash'?t('现金付款','Pay with cash'):payment==='card'?t('请刷一下玩具卡','Tap your pretend card'):t('假装扫一扫付款','Pretend to scan and pay')}</h2><strong>${money(amount)}</strong><p>${payment==='cash'?t('收到了多少现金？','How much cash did you receive?'):t('这是游戏付款，点击下面的按钮完成。','This is pretend payment. Tap below to finish.')}</p></div>${payment==='cash'?`<label>${t('收到现金（元）','Cash received (CNY)')}<input id="cash" type="number" step="0.01" min="${amount/100}" value="${amount/100}"></label><p id="change" aria-live="polite"></p>`:''}<button class="primary" id="finish">${payment==='cash'?t('收款完成','Accept cash'):payment==='card'?t('已刷玩具卡','Pretend card tapped'):t('游戏付款完成','Pretend payment complete')}</button>`);if(payment==='cash'){const update=()=>{const raw=$('#cash').value;const received=Math.round(Number(raw)*100);const valid=raw!==''&&Number.isSafeInteger(received)&&received>=amount;$('#change').textContent=valid?t('找零：','Change: ')+money(received-amount):t('现金不够哦','A little more cash is needed');$('#finish').disabled=!valid};$('#cash').oninput=update;update()}$('#finish').onclick=()=>{receipt={items:products.filter(p=>basket[p.id]).map(p=>({...p,qty:basket[p.id]})),total:amount,method:payment,change:payment==='cash'?Math.round(Number($('#cash').value)*100)-amount:null};basket={};basketOrder=[];persist();stopScanner();updateBasket();showReceipt()}}
 function showReceipt(){const d=modal(`<div class="receipt"><span class="celebrate">🎉</span><div class="eyebrow">LITTLE MARKET</div><h2>${t('结账成功！','All paid!')}</h2><p>${t('谢谢光临，小小收银员真棒。','Thank you! You’re a wonderful cashier.')}</p><div class="receipt-lines">${receipt.items.map(p=>`<div><span>${esc(name(p))} × ${p.qty}</span><b>${money(p.price*p.qty)}</b></div>`).join('')}<div class="receipt-total"><strong>${t('合计','Total')}</strong><strong>${money(receipt.total)}</strong></div>${receipt.change!==null?`<div><span>${t('找零','Change')}</span><b>${money(receipt.change)}</b></div>`:''}</div><p>${t('游戏付款已完成','Pretend payment complete')}</p><button class="primary" data-close>${t('迎接下一位顾客','Next customer')} →</button></div>`);d.addEventListener('close',()=>{if(page==='shop')startScanner()},{once:true})}
+function clearScanFeedback(){
+ clearTimeout(feedbackTimer);feedbackUntil=0;
+ const popup=$('#scan-feedback');if(popup){popup.hidden=true;popup.innerHTML=''}
+}
+function showScanFeedback(product){
+ clearScanFeedback();feedbackUntil=performance.now()+1000;
+ const popup=$('#scan-feedback');
+ popup.innerHTML=`<div class="scan-confirmation"><div class="scan-confirmed">✓ ${t('扫码成功','Item scanned')}</div><span class="confirmation-art ${esc(product.color||'blue')}">${esc(product.emoji)}</span><h2>${esc(name(product))}</h2><p>${money(product.price)} / ${esc(unit(product))}</p><strong>${t('购物篮数量','In your basket')} × ${basket[product.id]}</strong></div>`;
+ popup.hidden=false;playScanDing();
+ feedbackTimer=setTimeout(clearScanFeedback,1000);
+}
 function setScanStatus(message){const el=$('#scan-status');if(el&&el.textContent!==message)el.textContent=message}
-function stopScanner(){scanSession++;cancelAnimationFrame(scanFrame);stream?.getTracks().forEach(track=>track.stop());stream=null}
+function stopScanner(){clearScanFeedback();scanSession++;cancelAnimationFrame(scanFrame);stream?.getTracks().forEach(track=>track.stop());stream=null}
 function manualEntry(){const d=modal(`<button class="close" data-close aria-label="Close">×</button><h2>${t('输入商品编号','Enter product ID')}</h2><p>${t('例如 P001，可在二维码贴纸上找到。','For example P001, printed on your QR label.')}</p><form id="manual-form"><label>${t('商品编号','Product ID')}<input id="manual-id" placeholder="P001" autocapitalize="characters" required></label><p id="manual-error" role="status"></p><button class="primary">${t('添加商品','Add product')}</button></form>`);$('#manual-form').onsubmit=e=>{e.preventDefault();const id=$('#manual-id').value.trim().toUpperCase();if(!products.some(p=>p.id===id)){$('#manual-error').textContent=t('未知编号，请先在商品管理中添加','Unknown ID. Add it in Products first.');return}add(id);d.close()}}
 async function startScanner(){
  stopScanner();if(page!=='shop'||document.hidden)return;
@@ -79,14 +94,14 @@ async function startScanner(){
   const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d',{willReadFrequently:true});let lastFrame=0;
   const tick=time=>{
    if(session!==scanSession)return;
-   if(!$('#modal').open&&time-lastFrame>=200&&video.readyState>=2){
+   if(!$('#modal').open&&time>=feedbackUntil&&time-lastFrame>=200&&video.readyState>=2){
     lastFrame=time;canvas.width=Math.min(video.videoWidth,480);canvas.height=Math.round(video.videoHeight*canvas.width/video.videoWidth);
     ctx.drawImage(video,0,0,canvas.width,canvas.height);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);const code=jsQR(pixels.data,canvas.width,canvas.height);
     if(code){
      const id=code.data;const repeated=id===lastCode;
      lastCode=id;lastSeen=time;
      if(!repeated&&time-lastAdded>=1100){
-      if(products.some(p=>p.id===id)){lastAdded=time;add(id)}
+      if(products.some(p=>p.id===id)){lastAdded=time;if(add(id))showScanFeedback(products.find(p=>p.id===id))}
       else setScanStatus(t('未知商品编号：','Unknown product ID: ')+id.slice(0,30));
      }else if(!repeated){lastCode=null}
     }else if(time-lastSeen>=1000){lastCode=null;setScanStatus(t('准备好啦，扫描下一个商品','Ready for the next product'))}
@@ -95,6 +110,7 @@ async function startScanner(){
   };scanFrame=requestAnimationFrame(tick);
  }catch{if(session!==scanSession)return;stopScanner();failed()}
 }
+document.addEventListener('click',()=>{if(page==='shop')prepareScanSound()});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopScanner();else if(page==='shop')startScanner()});
 function fitViewport(){document.documentElement.style.setProperty('--app-height',window.innerHeight+'px')}
 window.addEventListener('resize',fitViewport);fitViewport();
