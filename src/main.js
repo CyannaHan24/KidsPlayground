@@ -98,11 +98,11 @@ async function startScanner(){
    if(paused){candidate=null;candidateCount=0}
    if(!paused&&time-lastFrame>=200&&video.readyState>=2&&video.currentTime!==lastVideoTime){
     lastFrame=time;lastVideoTime=video.currentTime;
-    // Decode only the centered square indicated by the guide. The preview shows
-    // the full camera image, so cropped-out labels cannot silently win a scan.
-    const side=Math.floor(Math.min(video.videoWidth,video.videoHeight)*0.85);
+    // Match object-fit: cover: enlarge the preview, but decode only the square
+    // actually outlined on screen, never labels hidden by the preview crop.
+    const scale=Math.max(video.clientWidth/video.videoWidth,video.clientHeight/video.videoHeight);
+    const side=Math.floor(Math.min(video.clientWidth/scale,video.clientHeight/scale)*0.9);
     const sx=(video.videoWidth-side)/2,sy=(video.videoHeight-side)/2;
-    const scale=Math.min(video.clientWidth/video.videoWidth,video.clientHeight/video.videoHeight);
     const guide=$('.scan-guide');guide.style.width=side*scale+'px';guide.style.height=side*scale+'px';
     canvas.width=Math.min(side,480);canvas.height=canvas.width;
     ctx.drawImage(video,sx,sy,side,side,0,0,canvas.width,canvas.height);

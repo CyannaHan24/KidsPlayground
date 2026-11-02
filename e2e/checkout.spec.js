@@ -6,7 +6,7 @@ async function manual(page,id){await page.locator('#manual').click();await page.
 async function start(page){await page.locator('[data-page="shop"]').click()}
 async function fakeCamera(page){const images={};for(const id of ['P001','P002','P003','P004'])images[id]=await QRCode.toDataURL(id,{width:400,margin:4});await page.addInitScript(images=>{
  window.cameraCalls=0;window.testTracks=[];window.scanCanvas=null;
- navigator.mediaDevices.getUserMedia=async()=>{window.cameraCalls++;const canvas=document.createElement('canvas');canvas.width=400;canvas.height=400;canvas.style='position:fixed;left:-9999px;width:1px;height:1px';document.body.append(canvas);window.scanCanvas=canvas;window.showCode=async id=>{const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,400,400);if(id){const image=new Image();image.src=images[id];await image.decode();ctx.drawImage(image,0,0)}};await window.showCode(null);const stream=canvas.captureStream(0);const track=stream.getVideoTracks()[0];setInterval(()=>{canvas.getContext('2d').drawImage(canvas,0,0);track.requestFrame()},100);window.testTracks.push(...stream.getTracks());return stream};
+ navigator.mediaDevices.getUserMedia=async()=>{window.cameraCalls++;const canvas=document.createElement('canvas');canvas.width=400;canvas.height=400;canvas.style='position:fixed;left:-9999px;width:1px;height:1px';document.body.append(canvas);window.scanCanvas=canvas;window.showCode=async id=>{const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,400,400);if(id){const image=new Image();image.src=images[id];await image.decode();ctx.drawImage(image,120,120,160,160)}};await window.showCode(null);const stream=canvas.captureStream(0);const track=stream.getVideoTracks()[0];setInterval(()=>{canvas.getContext('2d').drawImage(canvas,0,0);track.requestFrame()},100);window.testTracks.push(...stream.getTracks());return stream};
  },images)}
 test('home, basket, bilingual payments, local product mapping and offline restart',async({page,context})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));await fakeCamera(page);await page.goto('/');
@@ -39,6 +39,7 @@ for(const size of [{width:360,height:560},{width:360,height:640},{width:412,heig
  expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight&&document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await start(page);for(const id of ['P001','P002','P003','P004'])await manual(page,id);
  const bounds=await page.evaluate(()=>{const r=document.querySelector('#checkout').getBoundingClientRect();const v=document.querySelector('.scanner').getBoundingClientRect();const b=document.querySelector('.basket-items');b.scrollTop=1000;return {fits:r.bottom<=innerHeight&&r.top>=0&&v.top>=0,scroll:b.scrollTop,body:document.documentElement.scrollHeight,height:innerHeight}});
+ if(size.height>size.width){const visibleItems=await page.evaluate(()=>document.querySelector('.basket-items').clientHeight/document.querySelector('.basket-row').getBoundingClientRect().height);expect(visibleItems).toBeGreaterThanOrEqual(2.5)}
  expect(bounds.fits).toBe(true);expect(bounds.scroll).toBeGreaterThan(0);expect(bounds.body).toBeLessThanOrEqual(bounds.height);
  await page.screenshot({path:`/tmp/market-checkout-${size.width}x${size.height}.png`});
  });
