@@ -40,3 +40,9 @@ The app uses the actual viewport height (including a JavaScript fallback for bro
 Browser checks: start the production preview, then `npx playwright test`. The configuration defaults to `/usr/bin/chromium`; set `CHROMIUM_PATH` to use another installed Chromium executable.
 
 Payment dialogs reuse an already-open modal instead of calling `showModal()` again; the browser suite tests older-browser behavior that rejects duplicate modal opening, including Close and Finish for cash, QR, and card.
+
+## Product pictures
+
+The four starter products use original generated PNG illustrations in `src/assets/product-icons.png` (a 2×2 image sheet: milk, water, cola, noodles). The build precaches the PNG along with the app so pictures are available offline even before first visiting Products. Interface basket/payment/receipt icons use inline SVG instead of device emoji.
+
+Existing saved starter catalogs receive matching illustrations at display time without resetting prices or products. Matching uses the original names and emoji, not product IDs, so reassigned IDs do not receive an unrelated default picture. Newly created local products keep the device emoji fallback. In Products, choose an illustration or **Use device emoji** using the Product picture field. Export/import includes the optional `art` choice and accepts older backups without it.

@@ -89,3 +89,17 @@ test('a stalled video frame cannot confirm a product',async({page})=>{
  await fakeCamera(page);await page.addInitScript(()=>{const descriptor=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'currentTime');Object.defineProperty(HTMLMediaElement.prototype,'currentTime',{configurable:true,get(){return window.releaseFrames?descriptor.get.call(this):0}})});
  await page.goto('/');await start(page);await page.waitForFunction(()=>!!window.showCode);await page.evaluate(()=>window.showCode('P001'));await page.waitForTimeout(1400);await expect(page.locator('.badge')).toHaveText('0');await page.evaluate(()=>{window.releaseFrames=true});await expect(page.locator('.badge')).toHaveText('1');await expect(page.locator('#scan-feedback')).toContainText('P001');
 });
+test('repository PNG pictures are precached and old local catalogs work offline without losing custom products',async({page,context})=>{
+ await page.addInitScript(()=>{if(!localStorage.getItem('market-products'))localStorage.setItem('market-products',JSON.stringify([
+ {id:'P001',zh:'牛奶',en:'Milk',price:1250,unitZh:'瓶',unitEn:'bottle',emoji:'🥛',color:'blue'},
+ {id:'P002',zh:'玩具车',en:'Toy car',price:2500,unitZh:'个',unitEn:'item',emoji:'🚗',color:'aqua'},
+ {id:'P003',zh:'可乐',en:'Coke',price:300,unitZh:'瓶',unitEn:'bottle',emoji:'🥤',color:'pink'},
+ {id:'P004',zh:'面条',en:'Noodles',price:1000,unitZh:'包',unitEn:'pack',emoji:'🍜',color:'yellow'}
+ ]))});
+ await fakeCamera(page);await page.goto('/');await page.waitForFunction(()=>navigator.serviceWorker.controller!==null);
+ const pngCached=await page.evaluate(async()=>{for(const key of await caches.keys()){const cache=await caches.open(key);for(const req of await cache.keys()){if(/product-icons-.*\.png$/.test(new URL(req.url).pathname)){const response=await cache.match(req);return response.ok&&(await response.blob()).size>0}}}return false});expect(pngCached).toBe(true);
+ await context.setOffline(true);await page.locator('[data-page="products"]').click();await expect(page.locator('[data-edit="P001"] .picture-milk')).toHaveCount(1);await expect(page.locator('[data-edit="P003"] .picture-cola')).toHaveCount(1);await expect(page.locator('[data-edit="P002"] .product-picture')).toHaveCount(0);await expect(page.locator('[data-edit="P002"]')).toContainText('玩具车');await expect(page.locator('[data-edit="P001"]')).toContainText('¥12.50');
+ const loaded=await page.locator('.picture-cola').evaluate(el=>new Promise(resolve=>{const image=new Image();image.onload=()=>resolve(image.naturalWidth>0);image.onerror=()=>resolve(false);image.src=getComputedStyle(el).backgroundImage.slice(5,-2)}));expect(loaded).toBe(true);
+ await page.locator('[data-edit="P003"]').click();await page.locator('[name="art"]').selectOption('');await page.locator('#edit .primary').click();await expect(page.locator('[data-edit="P003"] .product-picture')).toHaveCount(0);
+ await page.locator('#home').click();await start(page);await manual(page,'P001');await expect(page.locator('.basket-row .picture-milk')).toHaveCount(1);await page.screenshot({path:'/tmp/market-product-pictures.png'});
+});
