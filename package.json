@@ -1,0 +1,20 @@
+{
+  "name": "little-market",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build --base=./ && node scripts/version-sw.js",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/model.test.js"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "vite": "^6.4.1",
+    "@playwright/test": "^1.56.0"
+  }
+}

@@ -1,0 +1,40 @@
+import jsQR from 'jsqr';
+import {test,expect} from '@playwright/test';
+test.use({viewport:{width:393,height:852}});
+test('phone checkout, language, persistence, payments, product remapping and offline restart',async({page,context})=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');
+ await page.waitForFunction(()=>navigator.serviceWorker.controller!==null);
+ await expect(page.locator('.offline')).toContainText('可离线玩');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.locator('[data-add="P001"]').first().click();
+ await page.locator('[data-add="P002"]').first().click();
+ await page.locator('[data-add="P003"]').first().click();
+ await page.locator('[data-add="P004"]').first().click();
+ await expect(page.locator('.total strong')).toHaveText('¥25.00');
+ await page.locator('.basket [data-add="P001"]').click();
+ await page.locator('[data-minus="P002"]').click();
+ await expect(page.locator('.total strong')).toHaveText('¥33.00');
+ await page.locator('#language').click();
+ await expect(page.locator('h1')).toContainText('Welcome');
+ await page.reload();
+ await expect(page.locator('.total strong')).toHaveText('¥33.00');
+ await page.locator('#checkout').click();await page.locator('[data-pay="cash"]').click();
+ await page.locator('#cash').fill('20');await expect(page.locator('#finish')).toBeDisabled();
+ await page.locator('#cash').fill('50');await expect(page.locator('#change')).toContainText('¥17.00');
+ await page.locator('#finish').click();await expect(page.locator('.receipt')).toContainText('All paid!');
+ await page.locator('[data-close]').click();await expect(page.locator('.badge')).toHaveText('0');
+ for(const method of ['qr','card']){await page.locator('[data-add="P001"]').first().click();await page.locator('#checkout').click();await page.locator(`[data-pay="${method}"]`).click();await page.locator('#finish').click();await expect(page.locator('.receipt')).toContainText('¥10.00');await page.locator('[data-close]').click()}
+ await page.locator('[data-page="products"]').click();await page.locator('[data-edit="P001"]').click();await page.locator('[name="zh"]').fill('苹果');await page.locator('[name="en"]').fill('Apple');await page.locator('[name="price"]').fill('5');await page.locator('#edit .primary').click();
+ await page.locator('[data-page="labels"]').click();expect(await page.locator('[data-qr="P001"]').getAttribute('data-qr')).toBe('P001');
+ await page.locator('[data-page="shop"]').click();await page.locator('[data-add="P001"]').first().click();await expect(page.locator('.total strong')).toHaveText('¥5.00');
+ await context.setOffline(true);await page.reload();await expect(page.locator('h1')).toContainText('Welcome');await expect(page.locator('.total strong')).toHaveText('¥5.00');await expect(page.locator('[data-add="P001"]').first()).toContainText('Apple');
+ await page.locator('[data-add="P002"]').first().click();await expect(page.locator('.total strong')).toHaveText('¥7.00');
+ await page.screenshot({path:'/tmp/little-market-phone.png',fullPage:true});expect(errors).toEqual([]);
+});
+test('QR labels decode to bare IDs',async({page})=>{await page.goto('/');await page.locator('[data-page="labels"]').click();await expect(page.locator('canvas')).toHaveCount(4);await page.waitForFunction(()=>document.querySelector('canvas')?.width===180);const images=await page.locator('canvas').evaluateAll(canvases=>canvases.map(c=>({id:c.dataset.qr,width:c.width,height:c.height,data:Array.from(c.getContext('2d').getImageData(0,0,c.width,c.height).data)})));for(const image of images){const code=jsQR(new Uint8ClampedArray(image.data),image.width,image.height);expect(code?.data).toBe(image.id)}});
+test('camera recognizes an ID once and stops its stream',async({page})=>{
+ const {default:QRCode}=await import('qrcode');const qr=await QRCode.toDataURL('P003',{width:400,margin:4});
+ await page.addInitScript(async qr=>{window.testTracks=[];navigator.mediaDevices.getUserMedia=async()=>{const image=new Image();image.src=qr;await image.decode();const canvas=document.createElement('canvas');canvas.width=400;canvas.height=400;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const stream=canvas.captureStream(10);window.testTracks=stream.getTracks();return stream}},qr);
+ await page.goto('/');await page.locator('#scan').click();await expect(page.locator('.basket-row')).toContainText('可乐');await expect(page.locator('.badge')).toHaveText('1');await expect(page.locator('#modal')).not.toBeVisible();expect(await page.evaluate(()=>window.testTracks.every(t=>t.readyState==='ended'))).toBe(true);
+});
